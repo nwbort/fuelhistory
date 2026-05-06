@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NSW Fuel Price Intelligence</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --red: #f85149;
+    --blue: #58a6ff;
+    --orange: #f0883e;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .page { max-width: 1280px; margin: 0 auto; padding: 24px 20px; }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .header-left h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: var(--text);
+  }
+
+  .header-left .subtitle {
+    color: var(--muted);
+    margin-top: 4px;
+    font-size: 13px;
+  }
+
+  .week-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    margin-left: 12px;
+    vertical-align: middle;
+  }
+
+  .fuel-tabs {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .fuel-tab {
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .fuel-tab:hover { color: var(--text); border-color: var(--border); }
+
+  .fuel-tab.active {
+    background: var(--surface-2);
+    color: var(--text);
+    border-color: var(--border);
+    font-weight: 600;
+  }
+
+  /* ── Price Pulse bar ─────────────────────────────────────── */
+  .pulse-bar {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 20px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+
+  .pulse-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .pulse-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .pulse-ratio {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  /* ── KPI cards ───────────────────────────────────────────── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 12px;
+  }
+
+  @media (max-width: 900px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 500px) {
+    .kpi-grid { grid-template-columns: 1fr; }
+  }
+
+  .kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+
+  .kpi-card .kpi-title {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+
+  .kpi-card .kpi-value {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .kpi-card .kpi-sub {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .change-positive { color: var(--red); }   /* price up = bad */
+  .change-negative { color: var(--green); } /* price down = good */
+  .change-neutral  { color: var(--muted); }
+
+  .prices-as-of {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 18px;
+  }
+
+  /* ── Bottom row: chart + movers ─────────────────────────── */
+  .chart-movers-row {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 16px;
+    margin-bottom: 20px;
+    align-items: start;
+  }
+
+  @media (max-width: 900px) {
+    .chart-movers-row { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .card-subtitle {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .card-body {
+    padding: 0 20px 20px;
+  }
+
+  .chart-container {
+    background: var(--surface-2);
+    border-radius: 6px;
+    padding: 12px;
+    position: relative;
+  }
+
+  /* ── Period toggles ──────────────────────────────────────── */
+  .period-toggles {
+    display: flex;
+    gap: 3px;
+  }
+
+  .period-btn {
+    padding: 4px 10px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.12s;
+  }
+
+  .period-btn:hover { color: var(--text); }
+
+  .period-btn.active {
+    background: var(--surface-2);
+    color: var(--text);
+    border-color: #484f58;
+  }
+
+  /* ── Biggest movers ──────────────────────────────────────── */
+  .movers-list {
+    padding: 0 16px 16px;
+    overflow-y: auto;
+    max-height: 380px;
+  }
+
+  .mover-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    gap: 10px;
+  }
+
+  .mover-item:last-child { border-bottom: none; }
+
+  .mover-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .mover-info { flex: 1; min-width: 0; }
+
+  .mover-name {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mover-sub {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+
+  .mover-right { text-align: right; flex-shrink: 0; }
+
+  .mover-price {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .mover-change {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  /* ── Brand comparison ────────────────────────────────────── */
+  .full-width-card {
+    margin-bottom: 20px;
+  }
+
+  /* ── Cheapest list ───────────────────────────────────────── */
+  .cheapest-list { padding: 0 20px 20px; }
+
+  .cheapest-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+  }
+
+  .cheapest-item:last-child { border-bottom: none; }
+
+  .cheapest-rank {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--muted);
+    width: 22px;
+    flex-shrink: 0;
+  }
+
+  .cheapest-rank.rank-1 { color: var(--orange); }
+
+  .cheapest-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .cheapest-info { flex: 1; min-width: 0; }
+
+  .cheapest-name {
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cheapest-sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cheapest-right { text-align: right; flex-shrink: 0; }
+
+  .cheapest-price {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .cheapest-ago {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+
+  /* ── Loading state ───────────────────────────────────────── */
+  .loading { opacity: 0.4; pointer-events: none; transition: opacity 0.2s; }
+
+  /* ── Scrollbar ───────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <div class="header">
+    <div class="header-left">
+      <h1>
+        NSW Fuel Price Intelligence
+        <span class="week-badge" id="week-badge">
+          <span id="badge-fuel">E10</span>
+          <span id="badge-arrow">↑</span>
+          <span id="badge-change">—</span>
+          this week
+        </span>
+      </h1>
+      <div class="subtitle" id="subtitle">Market analytics from — reporting NSW stations</div>
+    </div>
+    <div class="fuel-tabs" id="fuel-tabs">
+      <button class="fuel-tab active" data-fuel="E10">Unleaded (E10)</button>
+      <button class="fuel-tab" data-fuel="U91">Regular (U91)</button>
+      <button class="fuel-tab" data-fuel="P95">Premium 95</button>
+      <button class="fuel-tab" data-fuel="P98">Premium 98</button>
+      <button class="fuel-tab" data-fuel="DL">Diesel</button>
+      <button class="fuel-tab" data-fuel="LPG">LPG</button>
+    </div>
+  </div>
+
+  <!-- ── Price Pulse ────────────────────────────────────────── -->
+  <div class="pulse-bar" id="pulse-bar">
+    <span class="pulse-label">Price Pulse</span>
+    <span class="pulse-item" id="pulse-up-item">
+      <span style="color:var(--red)">↑</span>
+      <span>avg <strong id="pulse-avg-up" style="color:var(--red)">—</strong></span>
+      <span style="color:var(--muted)" id="pulse-up-count">(— stations)</span>
+    </span>
+    <span class="pulse-item" id="pulse-dn-item">
+      <span style="color:var(--green)">↓</span>
+      <span>avg <strong id="pulse-avg-dn" style="color:var(--green)">—</strong></span>
+      <span style="color:var(--muted)" id="pulse-dn-count">(— stations)</span>
+    </span>
+    <span class="pulse-ratio" id="pulse-ratio">—:— up/down ratio</span>
+  </div>
+
+  <!-- ── KPI Cards ──────────────────────────────────────────── -->
+  <div class="kpi-grid" id="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-title" id="kpi-fuel-label">Avg E10</div>
+      <div class="kpi-value" id="kpi-current">—</div>
+      <div class="kpi-sub" id="kpi-change-sub">— this week</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Avg Diesel</div>
+      <div class="kpi-value" id="kpi-diesel">—</div>
+      <div class="kpi-sub" id="kpi-diesel-sub">— this week</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Premium Fuel Premium</div>
+      <div class="kpi-value" id="kpi-premium">—</div>
+      <div class="kpi-sub" id="kpi-premium-sub">P98 vs selected fuel</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Brand Saving</div>
+      <div class="kpi-value" id="kpi-brand-saving">—</div>
+      <div class="kpi-sub" id="kpi-brand-sub">cheapest vs most expensive brand</div>
+    </div>
+  </div>
+
+  <div class="prices-as-of" id="prices-as-of">Prices as of —</div>
+
+  <!-- ── National Average + Biggest Movers ─────────────────── -->
+  <div class="chart-movers-row">
+    <div class="card" id="national-avg-card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">National Average</div>
+        </div>
+        <div class="period-toggles" id="national-period-toggles">
+          <button class="period-btn active" data-days="30">30d</button>
+          <button class="period-btn" data-days="90">90d</button>
+          <button class="period-btn" data-days="0">All</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="national-avg-chart" height="260"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Biggest Movers</div>
+      </div>
+      <div class="movers-list" id="movers-list">
+        <div style="color:var(--muted);padding:20px 0;text-align:center;">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Brand Price Comparison ─────────────────────────────── -->
+  <div class="card full-width-card" id="brand-comparison-card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Brand Price Comparison</div>
+        <div class="card-subtitle" id="brand-subtitle">Daily average prices, last 30 days</div>
+      </div>
+      <div class="period-toggles" id="brand-period-toggles">
+        <button class="period-btn active" data-days="30">30d</button>
+        <button class="period-btn" data-days="90">90d</button>
+        <button class="period-btn" data-days="365">1yr</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="chart-container">
+        <canvas id="brand-comparison-chart" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Cheapest Stations ──────────────────────────────────── -->
+  <div class="card full-width-card" id="cheapest-card">
+    <div class="card-header">
+      <div>
+        <div class="card-title" id="cheapest-title">Cheapest E10 in NSW</div>
+        <div class="card-subtitle">Stations that reported in the last 7 days</div>
+      </div>
+    </div>
+    <div class="cheapest-list" id="cheapest-list">
+      <div style="color:var(--muted);padding:20px 0;text-align:center;">Loading…</div>
+    </div>
+  </div>
+
+</div><!-- /page -->
+
+<script>
+'use strict';
+
+// ── State ────────────────────────────────────────────────────
+let currentFuel = 'E10';
+let nationalDays = 30;
+let brandDays = 30;
+
+// Chart instances
+let nationalChart = null;
+let brandChart = null;
+
+// ── Chart.js global defaults ─────────────────────────────────
+Chart.defaults.color = '#8b949e';
+Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
+
+const CHART_DEFAULTS = {
+  responsive: true,
+  maintainAspectRatio: true,
+  interaction: { mode: 'index', intersect: false },
+  plugins: {
+    legend: {
+      labels: { color: '#e6edf3', usePointStyle: true, pointStyleWidth: 12, boxHeight: 8 }
+    },
+    tooltip: {
+      backgroundColor: '#161b22',
+      borderColor: '#30363d',
+      borderWidth: 1,
+      titleColor: '#e6edf3',
+      bodyColor: '#8b949e',
+      callbacks: {
+        label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y != null ? ctx.parsed.y.toFixed(1) + 'c' : 'n/a'}`
+      }
+    }
+  },
+  scales: {
+    x: {
+      grid: { color: '#21262d', borderDash: [3, 3] },
+      ticks: { color: '#8b949e', maxTicksLimit: 10, maxRotation: 0 }
+    },
+    y: {
+      grid: { color: '#21262d', borderDash: [3, 3] },
+      ticks: { color: '#8b949e', callback: v => v + 'c' }
+    }
+  },
+  elements: {
+    line: { tension: 0.3 },
+    point: { radius: 0, hoverRadius: 4 }
+  }
+};
+
+// ── Color palettes ───────────────────────────────────────────
+const FUEL_COLORS = {
+  E10: '#f59e0b',
+  U91: '#a78bfa',
+  DL: '#3b82f6',
+};
+
+const BRAND_COLORS = [
+  '#f59e0b', '#3b82f6', '#3fb950', '#f85149',
+  '#a78bfa', '#f0883e', '#58a6ff', '#ec4899',
+];
+
+function brandColor(idx) {
+  return BRAND_COLORS[idx % BRAND_COLORS.length];
+}
+
+// ── Date alignment helper ────────────────────────────────────
+function alignSeries(data) {
+  const allDates = [...new Set(Object.values(data).flatMap(s => s.dates))].sort();
+  const result = { dates: allDates };
+  for (const [key, series] of Object.entries(data)) {
+    const map = Object.fromEntries(series.dates.map((d, i) => [d, series.prices[i]]));
+    result[key] = allDates.map(d => map[d] ?? null);
+  }
+  return result;
+}
+
+// ── Formatting helpers ───────────────────────────────────────
+function fmtPrice(val) {
+  if (val == null) return '—';
+  return val.toFixed(1) + 'c';
+}
+
+function fmtChange(val) {
+  if (val == null) return '—';
+  const sign = val >= 0 ? '+' : '';
+  return sign + val.toFixed(1) + 'c';
+}
+
+function changeClass(val, invertSign) {
+  if (val == null) return 'change-neutral';
+  const isPositive = invertSign ? val < 0 : val > 0;
+  const isNegative = invertSign ? val > 0 : val < 0;
+  if (isPositive) return 'change-positive';
+  if (isNegative) return 'change-negative';
+  return 'change-neutral';
+}
+
+// Price up = bad (red), price down = good (green)
+function priceChangeClass(val) {
+  if (val == null || val === 0) return 'change-neutral';
+  return val > 0 ? 'change-positive' : 'change-negative';
+}
+
+function loadingOn(el) { el.classList.add('loading'); }
+function loadingOff(el) { el.classList.remove('loading'); }
+
+// ── API wrappers ─────────────────────────────────────────────
+async function fetchStats(fuel) {
+  const r = await fetch(`/api/stats?fuel=${fuel}`);
+  return r.json();
+}
+
+async function fetchNationalAverage(days) {
+  const r = await fetch(`/api/national-average?days=${days}`);
+  return r.json();
+}
+
+async function fetchBrandComparison(fuel, days) {
+  const r = await fetch(`/api/brand-comparison?fuel=${fuel}&days=${days}`);
+  return r.json();
+}
+
+async function fetchBiggestMovers(fuel) {
+  const r = await fetch(`/api/biggest-movers?fuel=${fuel}`);
+  return r.json();
+}
+
+async function fetchCheapest(fuel) {
+  const r = await fetch(`/api/cheapest?fuel=${fuel}`);
+  return r.json();
+}
+
+// ── Render stats / KPIs ──────────────────────────────────────
+function renderStats(stats, fuel) {
+  // Week badge
+  const badgeFuel = document.getElementById('badge-fuel');
+  const badgeArrow = document.getElementById('badge-arrow');
+  const badgeChange = document.getElementById('badge-change');
+  badgeFuel.textContent = fuel;
+
+  if (stats.week_change != null) {
+    const up = stats.week_change >= 0;
+    badgeArrow.textContent = up ? '↑' : '↓';
+    badgeArrow.style.color = up ? 'var(--red)' : 'var(--green)';
+    badgeChange.textContent = fmtChange(stats.week_change);
+    badgeChange.style.color = up ? 'var(--red)' : 'var(--green)';
+  }
+
+  // Subtitle
+  document.getElementById('subtitle').textContent =
+    `Market analytics from ${stats.stations ? stats.stations.toLocaleString() : '—'} reporting NSW stations`;
+
+  // Price pulse
+  if (stats.pulse_up != null) {
+    document.getElementById('pulse-avg-up').textContent = '+' + stats.pulse_avg_up.toFixed(1) + 'c';
+    document.getElementById('pulse-up-count').textContent = `(${stats.pulse_up} stations)`;
+    document.getElementById('pulse-avg-dn').textContent = stats.pulse_avg_dn.toFixed(1) + 'c';
+    document.getElementById('pulse-dn-count').textContent = `(${stats.pulse_dn} stations)`;
+    document.getElementById('pulse-ratio').textContent =
+      `${stats.pulse_up}:${stats.pulse_dn} up/down ratio`;
+  }
+
+  // KPI: current avg
+  const fuelLabels = {
+    E10: 'E10', U91: 'U91', P95: 'P95', P98: 'P98', DL: 'Diesel', LPG: 'LPG',
+    E85: 'E85', B20: 'B20', PDL: 'PDL', EV: 'EV', CNG: 'CNG', LNG: 'LNG',
+  };
+  document.getElementById('kpi-fuel-label').textContent = `Avg ${fuelLabels[fuel] || fuel}`;
+  document.getElementById('kpi-current').textContent = fmtPrice(stats.current_avg);
+
+  const changeEl = document.getElementById('kpi-change-sub');
+  if (stats.week_change != null) {
+    changeEl.innerHTML = `<span class="${priceChangeClass(stats.week_change)}">${fmtChange(stats.week_change)}</span> this week`;
+  }
+
+  // KPI: diesel
+  document.getElementById('kpi-diesel').textContent = fmtPrice(stats.diesel_avg);
+  const dEl = document.getElementById('kpi-diesel-sub');
+  if (stats.diesel_change != null) {
+    dEl.innerHTML = `<span class="${priceChangeClass(stats.diesel_change)}">${fmtChange(stats.diesel_change)}</span> this week`;
+  }
+
+  // KPI: premium
+  document.getElementById('kpi-premium').textContent = fmtPrice(stats.premium);
+  if (stats.prem_pct != null) {
+    document.getElementById('kpi-premium-sub').textContent =
+      `${stats.prem_pct.toFixed(1)}% above · ~$${((stats.premium * 50) / 100).toFixed(0)} per 50L tank`;
+  }
+
+  // KPI: brand saving
+  document.getElementById('kpi-brand-saving').textContent = fmtPrice(stats.brand_saving);
+  if (stats.cheapest_brand) {
+    document.getElementById('kpi-brand-sub').textContent =
+      `cheapest brand: ${stats.cheapest_brand}`;
+  }
+
+  // Prices as of
+  if (stats.latest_fuel_date) {
+    const d = new Date(stats.latest_fuel_date + 'T00:00:00');
+    const fmt = d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+    document.getElementById('prices-as-of').textContent = `Prices as of ${fmt}`;
+  }
+
+  // Update cheapest title
+  const titleMap = {
+    E10: 'Cheapest Unleaded (E10) in NSW',
+    U91: 'Cheapest Regular (U91) in NSW',
+    P95: 'Cheapest Premium 95 in NSW',
+    P98: 'Cheapest Premium 98 in NSW',
+    DL: 'Cheapest Diesel in NSW',
+    LPG: 'Cheapest LPG in NSW',
+  };
+  document.getElementById('cheapest-title').textContent = titleMap[fuel] || `Cheapest ${fuel} in NSW`;
+}
+
+// ── National average chart ───────────────────────────────────
+function renderNationalChart(data) {
+  const aligned = alignSeries(data);
+  const canvas = document.getElementById('national-avg-chart');
+
+  if (nationalChart) { nationalChart.destroy(); nationalChart = null; }
+
+  const datasets = [
+    { label: 'E10', data: aligned['E10'] || [], borderColor: FUEL_COLORS.E10, backgroundColor: FUEL_COLORS.E10 + '18', fill: false, borderWidth: 2 },
+    { label: 'U91', data: aligned['U91'] || [], borderColor: FUEL_COLORS.U91, backgroundColor: FUEL_COLORS.U91 + '18', fill: false, borderWidth: 2 },
+    { label: 'Diesel', data: aligned['DL'] || [], borderColor: FUEL_COLORS.DL, backgroundColor: FUEL_COLORS.DL + '18', fill: false, borderWidth: 2 },
+  ];
+
+  nationalChart = new Chart(canvas, {
+    type: 'line',
+    data: { labels: aligned.dates, datasets },
+    options: { ...CHART_DEFAULTS }
+  });
+}
+
+// ── Brand comparison chart ───────────────────────────────────
+function renderBrandChart(data, days) {
+  const aligned = alignSeries(data);
+  const canvas = document.getElementById('brand-comparison-chart');
+
+  if (brandChart) { brandChart.destroy(); brandChart = null; }
+
+  const brands = Object.keys(data);
+  const datasets = brands.map((brand, i) => ({
+    label: brand,
+    data: aligned[brand] || [],
+    borderColor: brandColor(i),
+    backgroundColor: brandColor(i) + '18',
+    fill: false,
+    borderWidth: 2,
+  }));
+
+  brandChart = new Chart(canvas, {
+    type: 'line',
+    data: { labels: aligned.dates, datasets },
+    options: { ...CHART_DEFAULTS }
+  });
+
+  const daysLabel = days === 365 ? '1 year' : `${days} days`;
+  document.getElementById('brand-subtitle').textContent =
+    `Daily average prices, last ${daysLabel}`;
+}
+
+// ── Biggest movers ───────────────────────────────────────────
+function renderMovers(movers) {
+  const el = document.getElementById('movers-list');
+  if (!movers.length) {
+    el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">No data</div>';
+    return;
+  }
+
+  el.innerHTML = movers.map(m => {
+    const changeClass = m.change > 0 ? 'var(--red)' : 'var(--green)';
+    const dotColor = m.change > 0 ? 'var(--red)' : 'var(--green)';
+    const changeStr = (m.change > 0 ? '+' : '') + m.change.toFixed(1) + 'c';
+    return `
+      <div class="mover-item">
+        <div class="mover-dot" style="background:${dotColor}"></div>
+        <div class="mover-info">
+          <div class="mover-name" title="${m.ServiceStationName}">${m.ServiceStationName}</div>
+          <div class="mover-sub">${m.Suburb} · ${m.Brand}</div>
+        </div>
+        <div class="mover-right">
+          <div class="mover-price">${fmtPrice(m.current_price)}</div>
+          <div class="mover-change" style="color:${changeClass}">${changeStr}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── Cheapest stations ────────────────────────────────────────
+function renderCheapest(stations) {
+  const el = document.getElementById('cheapest-list');
+  if (!stations.length) {
+    el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">No data</div>';
+    return;
+  }
+
+  const brandDots = [
+    '#f59e0b', '#3b82f6', '#3fb950', '#f85149', '#a78bfa',
+    '#f0883e', '#58a6ff', '#ec4899', '#22d3ee', '#84cc16',
+  ];
+  const brandColorMap = {};
+  let colorIdx = 0;
+  function getBrandColor(brand) {
+    if (!brandColorMap[brand]) {
+      brandColorMap[brand] = brandDots[colorIdx++ % brandDots.length];
+    }
+    return brandColorMap[brand];
+  }
+
+  el.innerHTML = stations.map((s, i) => {
+    const rank = i + 1;
+    const rankClass = rank === 1 ? 'rank-1' : '';
+    const dotColor = getBrandColor(s.Brand);
+    const agoStr = s.days_ago === 0 ? 'today' : s.days_ago === 1 ? '1d ago' : `${s.days_ago}d ago`;
+    const agoColor = s.days_ago <= 1 ? 'var(--green)' : s.days_ago <= 3 ? 'var(--orange)' : 'var(--muted)';
+    return `
+      <div class="cheapest-item">
+        <div class="cheapest-rank ${rankClass}">${rank}</div>
+        <div class="cheapest-dot" style="background:${dotColor}"></div>
+        <div class="cheapest-info">
+          <div class="cheapest-name" title="${s.ServiceStationName}">${s.ServiceStationName}</div>
+          <div class="cheapest-sub">${s.Brand} · ${s.Address} · ${s.Suburb}</div>
+        </div>
+        <div class="cheapest-right">
+          <div class="cheapest-price">${fmtPrice(s.price)}</div>
+          <div class="cheapest-ago" style="color:${agoColor}">${agoStr}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── Full page refresh (fuel change) ─────────────────────────
+async function refreshAll() {
+  const pageEl = document.querySelector('.page');
+  loadingOn(pageEl);
+
+  try {
+    const [stats, national, brand, movers, cheapest] = await Promise.all([
+      fetchStats(currentFuel),
+      fetchNationalAverage(nationalDays),
+      fetchBrandComparison(currentFuel, brandDays),
+      fetchBiggestMovers(currentFuel),
+      fetchCheapest(currentFuel),
+    ]);
+
+    renderStats(stats, currentFuel);
+    renderNationalChart(national);
+    renderBrandChart(brand, brandDays);
+    renderMovers(movers);
+    renderCheapest(cheapest);
+  } catch (err) {
+    console.error('Failed to load data:', err);
+  }
+
+  loadingOff(pageEl);
+}
+
+// ── National period change ───────────────────────────────────
+async function refreshNational() {
+  const card = document.getElementById('national-avg-card');
+  loadingOn(card);
+  try {
+    const data = await fetchNationalAverage(nationalDays);
+    renderNationalChart(data);
+  } catch (err) { console.error(err); }
+  loadingOff(card);
+}
+
+// ── Brand period change ──────────────────────────────────────
+async function refreshBrand() {
+  const card = document.getElementById('brand-comparison-card');
+  loadingOn(card);
+  try {
+    const data = await fetchBrandComparison(currentFuel, brandDays);
+    renderBrandChart(data, brandDays);
+  } catch (err) { console.error(err); }
+  loadingOff(card);
+}
+
+// ── Event listeners ──────────────────────────────────────────
+document.getElementById('fuel-tabs').addEventListener('click', e => {
+  const btn = e.target.closest('.fuel-tab');
+  if (!btn) return;
+  document.querySelectorAll('.fuel-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentFuel = btn.dataset.fuel;
+  refreshAll();
+});
+
+document.getElementById('national-period-toggles').addEventListener('click', e => {
+  const btn = e.target.closest('.period-btn');
+  if (!btn) return;
+  document.querySelectorAll('#national-period-toggles .period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  nationalDays = parseInt(btn.dataset.days, 10);
+  refreshNational();
+});
+
+document.getElementById('brand-period-toggles').addEventListener('click', e => {
+  const btn = e.target.closest('.period-btn');
+  if (!btn) return;
+  document.querySelectorAll('#brand-period-toggles .period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  brandDays = parseInt(btn.dataset.days, 10);
+  refreshBrand();
+});
+
+// ── Init ──────────────────────────────────────────────────────
+refreshAll();
+</script>
+</body>
+</html>
